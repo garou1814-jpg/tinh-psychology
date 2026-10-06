@@ -285,12 +285,47 @@ function pct(){return Math.min(100,Math.round((state.mastered.length/QUESTIONS.l
 function toast(s){const t=document.getElementById('toast');t.textContent=s;t.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),1700)}
 
 const audio={};
-function getAudio(file,loop=false){if(!audio[file]){audio[file]=new Audio(file);audio[file].preload='auto'}audio[file].loop=loop;return audio[file]}
+let musicPlaying=false;
+let musicNeedsGesture=false;
+function getAudio(file,loop=false){
+  if(!audio[file]){audio[file]=new Audio(file);audio[file].preload='auto'}
+  audio[file].loop=loop;
+  return audio[file]
+}
 function play(file){try{const a=getAudio(file);a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{})}catch(e){}}
-function startMusic(){if(!state.music)return;try{const a=getAudio('background_music.mp3',true);a.volume=.22;const p=a.play();if(p&&p.catch)p.catch(()=>{})}catch(e){}}
-function stopMusic(){try{const a=getAudio('background_music.mp3');a.pause();a.currentTime=0}catch(e){}}
-function musicToggle(){state.music=!state.music;save();if(state.music)startMusic();else stopMusic();renderMusic()}
-function renderMusic(){document.getElementById('musicControl').innerHTML='<button data-action="music">'+(state.music?'🔊 Music ON':'🔇 Music OFF')+'</button>'}
+function startMusic(){
+  if(!state.music || view!=='quiz') return;
+  try{
+    const a=getAudio('background_music.mp3',true);
+    a.volume=.22;
+    const p=a.play();
+    if(p&&p.then){
+      p.then(()=>{musicPlaying=true;musicNeedsGesture=false;renderMusic()})
+       .catch(()=>{musicPlaying=false;musicNeedsGesture=true;renderMusic()});
+    }else{musicPlaying=true;}
+  }catch(e){musicPlaying=false;musicNeedsGesture=true;renderMusic()}
+}
+function stopMusic(){
+  try{const a=getAudio('background_music.mp3');a.pause();a.currentTime=0;musicPlaying=false;musicNeedsGesture=false}catch(e){}
+}
+function musicToggle(){
+  state.music=!state.music;save();
+  if(state.music){startMusic()}else{stopMusic()}
+  renderMusic()
+}
+function forceMusicStart(){
+  if(view==='quiz'&&state.music){
+    const a=getAudio('background_music.mp3',true);
+    a.volume=.22;
+    const p=a.play();
+    if(p&&p.then)p.then(()=>{musicPlaying=true;musicNeedsGesture=false;renderMusic()}).catch(()=>{});
+  }
+}
+function renderMusic(){
+  const el=document.getElementById('musicControl');if(!el)return;
+  let label=state.music?(musicPlaying?'🔊 Music ON':'▶️ Play Music'):'🔇 Music OFF';
+  el.innerHTML='<button data-action="music">'+label+'</button>'
+}
 
 let view='home',chapter=1,mode='practice';
 let quiz={questions:[],index:0,selected:null,checked:false,correct:0,startedAt:0,scenarioRevealed:false,scenarioSelf:null,answers:[],shouldTalkQuestion:true,dialogue:'question'};
@@ -305,7 +340,7 @@ function learn(){view='learn';const blocks=MEMORY[chapter];return shell('<div cl
 function searchPage(){view='search';return shell('<div class="page-head">'+backButton()+'<h1>Search revision</h1></div><input id="globalSearch" class="search" placeholder="Try “spacing”, “prefrontal cortex”, “Big C”…"><div id="searchResults" class="section"></div>')}
 function runSearch(term){const out=[];term=term.trim().toLowerCase();if(!term)return '<div class="empty">Type something to search.</div>';for(let c=1;c<=4;c++){MEMORY[c].forEach(x=>{if((x[0]+' '+x[1]).toLowerCase().includes(term))out.push('<div class="card concept"><div class="tag">Chapter '+c+' · Concept</div><h3>'+esc(x[0])+'</h3><p>'+esc(x[1])+'</p><button class="btn secondary" data-action="learn" data-ch="'+c+'">Open chapter</button></div>')})}QUESTIONS.filter(q=>q.q.toLowerCase().includes(term)).slice(0,20).forEach(q=>out.push('<div class="card concept"><div class="tag">Chapter '+q.ch+' · '+q.sec+'</div><h3>'+esc(q.q)+'</h3><button class="btn primary" data-action="single" data-id="'+q.id+'">Practice this</button></div>'));return out.length?'<div class="concept-grid">'+out.join('')+'</div>':'<div class="empty">No matching revision content.</div>'}
 
-function setupQuiz(list, titleMode='Chapter test'){quiz={questions:list,index:0,selected:null,checked:false,correct:0,startedAt:Date.now(),scenarioRevealed:false,scenarioSelf:null,answers:[],titleMode,shouldTalkQuestion:true,dialogue:'question'};view='quiz';startMusic();render()}
+function setupQuiz(list, titleMode='Chapter test'){quiz={questions:list,index:0,selected:null,checked:false,correct:0,startedAt:Date.now(),scenarioRevealed:false,scenarioSelf:null,answers:[],titleMode,shouldTalkQuestion:true,dialogue:'question'};view='quiz';startMusic();render();setTimeout(()=>{if(view==='quiz'&&state.music&&!musicPlaying)startMusic()},50)}
 function practice(ch){chapter=+ch;setupQuiz(shuffle(QUESTIONS.filter(q=>q.ch===chapter)), 'Chapter '+chapter+' test')}
 function quick(){setupQuiz(shuffle(QUESTIONS).slice(0,20),'Quick test')}
 function single(id){const q=QUESTIONS.find(x=>x.id===id);if(q)setupQuiz([q],'Single question')}
@@ -317,13 +352,111 @@ let charAnimTimer=null,talkTimer=null,textTimer=null;
 function clearCharTimers(){clearInterval(charAnimTimer);clearInterval(talkTimer);clearInterval(textTimer);charAnimTimer=talkTimer=textTimer=null}
 function setCharacter(s,animate=''){const img=document.getElementById('characterImg');if(!img)return;img.src=charFile(s);img.className='character '+animate;img.onerror=()=>{img.style.display='none';const p=document.getElementById('charPlaceholder');if(p)p.style.display='block'}}
 const DIALOGUES={
-  question:["Let's see… can you get this one?","Okay, your turn! Think carefully.","Hmm… I know you can figure this out!"],
-  selected:["Are you sure about that?","Hmm… is that really your answer?","Take a second and think it through.","Locking that answer in?","Trust your memory… or check your thinking!"],
-  good:["YES! You got it! 🎉","Great job! That's correct!","Nice one! Your memory is getting stronger!","Boom! +10 XP! ⚡","Exactly! Keep that streak going!"],
-  bad:["Not quite… but that's okay!","Almost! Let's learn from this one.","Don't worry — mistakes help you remember!","Hmm… take a look at the explanation.","You were close! Let's figure out why."],
-  neutral:["Here comes the explanation!","Let's see why this is the answer."]
+  question:[
+    "Let's see… can you get this one?",
+    "Okay, your turn! Think carefully.",
+    "Hmm… I know you can figure this out!",
+    "Alright, brain mode: ON. 🧠",
+    "This one looks innocent… but is it? 👀",
+    "No rush. A good answer needs a good thought.",
+    "Let's see what your memory remembers.",
+    "Careful… this question has a tiny trap. 😈",
+    "You studied this. Somewhere in that brain of yours. 😭",
+    "Focus! We've got a question to defeat.",
+    "Think first, click second.",
+    "Okay genius, show me what you've got. 😏",
+    "One question at a time. We got this.",
+    "Don't let the wording scare you.",
+    "Your mission, should you choose to accept it: answer correctly. 🎮"
+  ],
+  selected:[
+    "Are you sure about that?",
+    "Hmm… is that really your answer?",
+    "Take a second and think it through.",
+    "Locking that answer in?",
+    "Trust your memory… or check your thinking!",
+    "Interesting choice… very interesting. 🤨",
+    "You clicked that with confidence. I hope the confidence is justified. 😭",
+    "Before we commit… does that actually make sense?",
+    "Your brain said yes. Should we trust it? 👀",
+    "Bold choice. I respect the bravery.",
+    "Wait… think about the key idea again.",
+    "That's your final answer? 👀",
+    "Hmm. I'm not saying it's wrong… yet.",
+    "You have selected your destiny. 💀",
+    "Okay, I saw that click. No take-backs after Check! 😈"
+  ],
+  good:[
+    "YES! You got it! 🎉",
+    "Great job! That's correct!",
+    "Nice one! Your memory is getting stronger!",
+    "Boom! +10 XP! ⚡",
+    "Exactly! Keep that streak going!",
+    "Correct! Your brain is cooking! 🔥",
+    "Look at you remembering things! 👏",
+    "Okayyy, big brain moment.",
+    "Nailed it!",
+    "That's exactly right. Nice work!",
+    "Correct! I knew you had it. 😎",
+    "LET'S GOOOO! 🎉",
+    "You actually remembered that! I'm impressed. 👀",
+    "Another point for the brain! 🧠",
+    "Correct. Beautiful. Absolutely beautiful.",
+    "Your future exam score just smiled. 😏",
+    "That's the answer! Keep going!",
+    "Brain: 1. Confusion: 0. 😎",
+    "Excellent! Now don't get too comfortable. 😈",
+    "Correct! We're building that memory muscle. 💪🧠"
+  ],
+  bad:[
+    "Not quite… but that's okay!",
+    "Almost! Let's learn from this one.",
+    "Don't worry — mistakes help you remember!",
+    "Hmm… take a look at the explanation.",
+    "You were close! Let's figure out why.",
+    "Oof… the brain has betrayed us today. 😭",
+    "Well… that was certainly a choice. 💀",
+    "Your answer took a wrong turn. 😂",
+    "Not this time. But now you know why!",
+    "That one was sneaky. Don't let it beat you twice.",
+    "Okay, okay… let's see what went wrong.",
+    "Incorrect — but this is actually useful!",
+    "A mistake today can become a memory tomorrow. 🧠",
+    "We missed it. No drama. Let's fix it.",
+    "Your brain said ‘trust me’… and then did THAT. 😭",
+    "Not quite. Read the explanation carefully.",
+    "Close! One more look and you'll have it.",
+    "The good news? Now this mistake is harder to forget. 😈",
+    "Nope… but hey, that's why we're practicing.",
+    "Don't panic. Understanding beats guessing."
+  ],
+  neutral:[
+    "Okay, let's break this down.",
+    "Here's the important part.",
+    "Remember this one!",
+    "Let's see why this is the answer.",
+    "This is where things get interesting.",
+    "Don't just memorize it — understand it.",
+    "Here's a little memory checkpoint. 🧠",
+    "Pay attention to this explanation.",
+    "This one is worth remembering.",
+    "Think of it this way…",
+    "And now you know why!",
+    "Let that sink in. 🧠",
+    "Remember the key idea, not just the answer.",
+    "This is the part your future self will thank you for.",
+    "Got it? Good. Let's move on."
+  ]
 };
-function randomLine(type){const a=DIALOGUES[type]||DIALOGUES.neutral;return a[Math.floor(Math.random()*a.length)]}
+const dialogueLast={question:null,selected:null,good:null,bad:null,neutral:null};
+function randomLine(type){
+  const a=DIALOGUES[type]||DIALOGUES.neutral;
+  if(a.length===1)return a[0];
+  let i;
+  do{i=Math.floor(Math.random()*a.length)}while(a[i]===dialogueLast[type]);
+  dialogueLast[type]=a[i];
+  return a[i];
+}
 function talkText(text){clearCharTimers();const bubble=document.getElementById('questionBubble');if(!bubble)return;const img=document.getElementById('characterImg');if(img){img.style.display='block';const p=document.getElementById('charPlaceholder');if(p)p.style.display='none'}let i=0;setCharacter('closed');bubble.textContent='';talkTimer=setInterval(()=>{if(i>=text.length){clearInterval(talkTimer);talkTimer=null;setCharacter('closed');return}bubble.textContent=text.slice(0,++i);if(img){setCharacter(i%2?'open':'closed','char-talk')}if(text[i-1]!==' '&&text[i-1]!=='\n')play('text.mp3')},28)}
 function talkLine(type){clearCharTimers();const bubble=document.getElementById('questionBubble');if(!bubble)return;setCharacter('closed');const text=randomLine(type);let i=0;bubble.textContent='';talkTimer=setInterval(()=>{if(i>=text.length){clearInterval(talkTimer);talkTimer=null;if(type==='selected'||type==='neutral')setCharacter('closed');return}bubble.textContent=text.slice(0,++i);setCharacter(i%2?'open':'closed','char-talk');if(text[i-1]!==' '&&text[i-1]!=='\n')play('text.mp3')},28)}
 function reaction(kind){clearCharTimers();if(kind==='good'){setCharacter('happy','char-happy');setTimeout(()=>talkLine('good'),120)}else if(kind==='bad'){setCharacter('confused');setTimeout(()=>talkLine('bad'),100);setTimeout(()=>{clearCharTimers();setCharacter('confused');let up=true;charAnimTimer=setInterval(()=>{setCharacter(up?'raise':'stomp',up?'':'char-stomp');up=!up},360)},900)}else{setCharacter('closed');talkLine('neutral')}}
@@ -333,6 +466,8 @@ function renderQuiz(){const q=quiz.questions[quiz.index];if(!q){finishQuiz();ret
 let feedback='';if(quiz.checked){const ok=quiz.lastCorrect;feedback='<div class="feedback '+(ok?'good':'bad')+'"><b>'+(ok?'✅ Correct!':'❌ Not quite.')+'</b><div class="answer-line '+(ok?'rightline':'wrongline')+'"><b>Your answer:</b> '+esc(quiz.lastAnswer||'No answer')+'</div><div class="answer-line rightline"><b>Correct answer:</b> '+esc(q.ans)+'</div><div style="margin-top:10px"><b>Why:</b> '+esc(q.exp)+'</div></div>'}
 return shell('<div class="page-head">'+backButton()+'<div><h1>'+esc(quiz.titleMode)+'</h1><div class="muted">Question '+(quiz.index+1)+' of '+total+' · '+q.sec+'</div></div></div><div class="quiz-wrap"><div class="quiz-layout">'+quizCharacter(q)+'<section class="card quiz-card"><div class="q-meta"><span>Chapter '+q.ch+'</span><span>'+Math.round(((quiz.index)/total)*100)+'% session progress</span></div><div class="q-text">'+esc(q.q)+'</div>'+body+feedback+'<div class="actions">'+(!quiz.checked&&q.type!=='scenario'?'<button class="btn primary" data-action="check">Check answer ✓</button>':'')+(q.type==='scenario'&&quiz.scenarioRevealed?'<button class="btn primary" data-action="next">Next →</button>':'')+(quiz.checked?'<button class="btn primary" data-action="next">'+(quiz.index===total-1?'Finish':'Next →')+'</button>':'')+'</div></section></div></div>')}
 function optionClass(q,o){if(!quiz.checked)return quiz.selected===o?'selected':'';if(o===q.ans)return 'correct';if(o===quiz.selected)return 'wrong';return ''}
+document.addEventListener('input',e=>{if(e.target.id==='fillInput'&&!quiz.checked){quiz.selected=e.target.value;}});
+document.addEventListener('focusin',e=>{if(e.target.id==='fillInput'&&!quiz.checked&&!quiz.selected){quiz.shouldTalkQuestion=false;setTimeout(()=>talkLine('selected'),60)}});
 function checkAnswer(){const q=quiz.questions[quiz.index];if(!q||quiz.checked)return;if(q.type==='fill'){const el=document.getElementById('fillInput');quiz.selected=(el?el.value:'').trim();if(!quiz.selected){toast('Type an answer first.');return}}const ok=q.type==='tf'||q.type==='mc'?quiz.selected===q.ans:q.type==='fill'?normalize(quiz.selected)===normalize(q.ans):false;quiz.checked=true;quiz.lastCorrect=ok;quiz.lastAnswer=quiz.selected||'No answer';quiz.answers.push({id:q.id,correct:ok,answer:quiz.lastAnswer});state.answered++;if(ok){state.correct++;if(!state.mastered.includes(q.id))state.mastered.push(q.id);state.mistakes=state.mistakes.filter(id=>id!==q.id);awardXP(10);play('right.mp3')}else{if(!state.mistakes.includes(q.id))state.mistakes.push(q.id);play('wrong.mp3')}save();checkAchievements();quiz.dialogue=ok?'good':'bad';quiz.shouldTalkQuestion=false;render();setTimeout(()=>reaction(ok?'good':'bad'),80)}
 function nextQuestion(){const q=quiz.questions[quiz.index];if(q&&q.type==='scenario'&&!quiz.scenarioRevealed)return;if(q&&q.type==='scenario'&&quiz.scenarioSelf==='got'){if(!state.mastered.includes(q.id))state.mastered.push(q.id);awardXP(5);save()}quiz.index++;quiz.selected=null;quiz.checked=false;quiz.scenarioRevealed=false;quiz.scenarioSelf=null;quiz.lastCorrect=false;quiz.lastAnswer='';quiz.dialogue='question';quiz.shouldTalkQuestion=true;if(quiz.index>=quiz.questions.length){finishQuiz();return}render()}
 function finishQuiz(){clearCharTimers();stopMusic();state.completed[chapter]=quiz.questions.length>=10&&quiz.answers.length===quiz.questions.length&&quiz.answers.every(x=>x.correct);save();checkAchievements();view='result';render()}
@@ -354,10 +489,12 @@ function resetAll(){if(confirm('Reset all XP, streak, progress and mistakes?')){
 function render(){clearCharTimers();let html='';if(view==='home')html=home();else if(view==='chapters')html=chapters();else if(view==='learn')html=learn();else if(view==='search')html=searchPage();else if(view==='quiz')html=renderQuiz();else if(view==='result')html=renderResult();else if(view==='mistakes')html=mistakes();else if(view==='achievements')html=achievements();else if(view==='flash')html=flashCard();document.getElementById('app').innerHTML=html;renderMusic();bindLocal();if(view==='quiz'&&quiz.shouldTalkQuestion){quiz.shouldTalkQuestion=false;setTimeout(()=>talkText(quiz.questions[quiz.index]?.q||''),100)}}
 function bindLocal(){const ls=document.getElementById('learnSearch');if(ls)ls.oninput=()=>{const term=ls.value.toLowerCase();document.querySelectorAll('[data-concept]').forEach(x=>x.style.display=x.dataset.concept.includes(term)?'block':'none')};const gs=document.getElementById('globalSearch');if(gs){const r=document.getElementById('searchResults');gs.oninput=()=>r.innerHTML=runSearch(gs.value)}if(view==='quiz'){const fi=document.getElementById('fillInput');if(fi)fi.oninput=()=>{quiz.selected=fi.value};}}
 
-document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='home'){view='home';render()}else if(a==='chapters'){view='chapters';render()}else if(a==='learn'){chapter=+b.dataset.ch;view='learn';render()}else if(a==='practice'){practice(b.dataset.ch)}else if(a==='quick'){quick()}else if(a==='mistakes'){view='mistakes';render()}else if(a==='retry'){retry()}else if(a==='retry-session'){retrySession()}else if(a==='achievements'){view='achievements';render()}else if(a==='search'){view='search';render()}else if(a==='single'){single(b.dataset.id)}else if(a==='option'){if(!quiz.checked){quiz.selected=quiz.questions[quiz.index].opts[+b.dataset.i];quiz.dialogue='selected';quiz.shouldTalkQuestion=false;render();setTimeout(()=>talkLine('selected'),80)}}else if(a==='check'){checkAnswer()}else if(a==='next'){nextQuestion()}else if(a==='reveal'){quiz.scenarioRevealed=true;quiz.shouldTalkQuestion=false;render();setTimeout(()=>reaction('neutral'),80)}else if(a==='scenario-rate'){quiz.scenarioSelf=b.dataset.rate;render()}else if(a==='flash'){chapter=1;flashPage([...MEMORY[1]].map(x=>({key:x[0],answer:x[1],tip:x[2]})))}else if(a==='flash-ch'){chapter=+b.dataset.ch;flashPage([...MEMORY[chapter]].map(x=>({key:x[0],answer:x[1],tip:x[2]})))}else if(a==='flash-reveal'){flash.revealed=true;render()}else if(a==='flash-know'){flashRate(true)}else if(a==='flash-review'){flashRate(false)}else if(a==='music'){musicToggle()}else if(a==='reset'){resetAll()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='home'){view='home';render()}else if(a==='chapters'){view='chapters';render()}else if(a==='learn'){chapter=+b.dataset.ch;view='learn';render()}else if(a==='practice'){practice(b.dataset.ch)}else if(a==='quick'){quick()}else if(a==='mistakes'){view='mistakes';render()}else if(a==='retry'){retry()}else if(a==='retry-session'){retrySession()}else if(a==='achievements'){view='achievements';render()}else if(a==='search'){view='search';render()}else if(a==='single'){single(b.dataset.id)}else if(a==='option'){if(!quiz.checked){quiz.selected=quiz.questions[quiz.index].opts[+b.dataset.i];quiz.dialogue='selected';quiz.shouldTalkQuestion=false;render();setTimeout(()=>talkLine('selected'),80)}}else if(a==='check'){checkAnswer()}else if(a==='next'){nextQuestion()}else if(a==='reveal'){quiz.scenarioRevealed=true;quiz.shouldTalkQuestion=false;render();setTimeout(()=>reaction('neutral'),80)}else if(a==='scenario-rate'){quiz.scenarioSelf=b.dataset.rate;render()}else if(a==='flash'){chapter=1;flashPage([...MEMORY[1]].map(x=>({key:x[0],answer:x[1],tip:x[2]})))}else if(a==='flash-ch'){chapter=+b.dataset.ch;flashPage([...MEMORY[chapter]].map(x=>({key:x[0],answer:x[1],tip:x[2]})))}else if(a==='flash-reveal'){flash.revealed=true;render()}else if(a==='flash-know'){flashRate(true)}else if(a==='flash-review'){flashRate(false)}else if(a==='music'){if(state.music&&!musicPlaying){forceMusicStart();renderMusic()}else{musicToggle()}}else if(a==='reset'){resetAll()}});
 
 function esc(s){return String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]))}
 
+document.addEventListener('pointerdown',()=>{if(view==='quiz'&&state.music&&!musicPlaying)forceMusicStart()},{passive:true});
+document.addEventListener('keydown',()=>{if(view==='quiz'&&state.music&&!musicPlaying)forceMusicStart()},{passive:true});
 render();
 </script>
 </body>
