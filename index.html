@@ -452,14 +452,16 @@ function blackMagicShuffle(){
 }
 
 function characterClicked(){
-  if(characterClickBusy||magicShuffleBusy)return;
+  // Count every real mascot tap. Do NOT lose taps while the fall animation is playing.
   if(view==='quiz'&&!quiz.checked){
     characterClickCount++;
     if(characterClickCount===3||characterClickCount===5){
+      if(magicShuffleBusy)return;
       blackMagicShuffle();
       return;
     }
   }
+  if(characterClickBusy||magicShuffleBusy)return;
   characterClickBusy=true;clearCharTimers();clearTimeout(characterClickTimer);
   play('scream.mp3');
   const bubble=document.getElementById('questionBubble');
